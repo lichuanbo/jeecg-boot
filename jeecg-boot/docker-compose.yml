@@ -6,8 +6,13 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
     restart: always
-    container_name: jeecg-boot-mysql
-    image: jeecg-boot-mysql
+    container_name: mysql
+    image: mysql
+    privileged: true
+    volumes:
+      - /usr/local/docker/mysql/data:/var/lib/mysql
+      - /usr/local/docker/mysql/logs:/logs
+      - /usr/local/docker/mysql/conf:/etc/mysql/conf.d
     command:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_general_ci
