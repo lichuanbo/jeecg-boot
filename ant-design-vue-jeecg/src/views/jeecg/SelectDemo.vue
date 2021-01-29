@@ -56,6 +56,7 @@
                 placeholder="请做出你的选择"
                 v-model="formData.asyncSelectValue"
                 dict="sys_depart,depart_name,id"
+                :pageSize="6"
                 :async="true">
               </j-search-select-tag>
             </a-form-item>
@@ -130,7 +131,7 @@
         <a-row :gutter="24">
           <a-col :span="12">
             <a-form-item label="选择职务">
-              <j-select-position  v-model="formData.selectPosition" />
+              <j-select-position  :buttons="false" v-model="formData.selectPosition" />
             </a-form-item>
           </a-col>
           <a-col :span="12">选中值：{{ formData.selectPosition}}</a-col>
@@ -285,7 +286,7 @@
         <a-row :gutter="24">
           <a-col :span="12">
             <a-form-item label="分类字典树">
-              <j-category-select v-model="formData.selectCategory" pcode="A01" :multiple="true"/>
+              <j-category-select v-model="formData.selectCategory" pcode="B01" :multiple="true"/>
             </a-form-item>
           </a-col>
           <a-col :span="12">选中的值(v-model)：{{ formData.selectCategory }}</a-col>
@@ -362,10 +363,10 @@
           <a-col :span="12">
             <a-form-item label="特殊查询组件">
               <a-row>
-                <a-col :span="16">
+                <a-col :span="15">
                   <j-input v-model="formData.jInput" :type="jInput.type"/>
                 </a-col>
-                <a-col :span="3" style="text-align: right;" >查询类型：</a-col>
+                <a-col :span="4" style="text-align: right;" >查询类型：</a-col>
                 <a-col :span="5">
                   <a-select v-model="jInput.type" :options="jInput.options"></a-select>
                 </a-col>

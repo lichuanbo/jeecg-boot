@@ -1,6 +1,6 @@
 import XEUtils from 'xe-utils'
 import PropTypes from 'ant-design-vue/es/_util/vue-types'
-import { JVXETypes } from '@/components/jeecg/JVxeTable/index'
+import { JVXETypes } from '@/components/jeecg/JVxeTable/jvxeTypes'
 import VxeWebSocketMixins from '../mixins/vxe.web.socket.mixins'
 import { initDictOptions } from '@/components/dict/JDictSelectUtil'
 
@@ -181,6 +181,28 @@ export default {
         if (column.cellRender) {
           Object.assign(column.cellRender, renderOptions)
         }
+        // update--begin--autor:lvdandan-----date:20201019------for:LOWCOD-882 【新行编辑】列表上带按钮的遮挡问题
+        if (column.$type === JVXETypes.file || column.$type === JVXETypes.image) {
+          if (column.width && column.width.endsWith('px')) {
+            column.width = Number.parseInt(column.width.substr(0,column.width.length-2))+Number.parseInt(1)+'px';
+          }
+        }
+        // update--begin--autor:lvdandan-----date:20201019------for:LOWCOD-882 【新行编辑】列表上带按钮的遮挡问题
+
+        // update--begin--autor:lvdandan-----date:20201211------for:JT-118 【online】 日期、时间控件长度较小
+        if (column.$type === JVXETypes.datetime || column.$type === JVXETypes.userSelect || column.$type === JVXETypes.departSelect) {
+          let width = column.width && column.width.endsWith('px')?Number.parseInt(column.width.substr(0,column.width.length-2)):0;
+          if(width <= 190){
+            column.width = '190px'
+          }
+        }
+        if (column.$type === JVXETypes.date) {
+          let width = column.width && column.width.endsWith('px')?Number.parseInt(column.width.substr(0,column.width.length-2)):0;
+          if(width <= 135){
+            column.width = '135px'
+          }
+        }
+        // update--end--autor:lvdandan-----date:20201211------for:JT-118 【online】 日期、时间控件长度较小
       })
       return this._innerColumns
     },
@@ -702,6 +724,11 @@ export default {
         deleteData: this.getDeleteData()
       }
     },
+    /** 获取表格表单里的值 */
+    getValues(callback, rowIds) {
+      let tableData = this.getTableData({rowIds: rowIds})
+      callback('', tableData)
+    },
     /** 获取表格数据 */
     getTableData(options = {}) {
       let {rowIds} = options
@@ -725,6 +752,11 @@ export default {
     getNewData() {
       let newData = cloneObject(this.$refs.vxe.getInsertRecords())
       newData.forEach(row => delete row.id)
+      return newData
+    },
+    /** 仅获取新增的数据,带有id */
+    getNewDataWithId() {
+      let newData = cloneObject(this.$refs.vxe.getInsertRecords())
       return newData
     },
     /** 根据ID获取行，新增的行也能查出来 */
@@ -760,8 +792,8 @@ export default {
      * @param rows
      * @return
      */
-    async addRows(rows = {}) {
-      return this._addOrInsert(rows, -1, 'added')
+    async addRows(rows = {}, isOnlJs) {
+      return this._addOrInsert(rows, -1, 'added', isOnlJs)
     },
 
     /**
@@ -852,6 +884,8 @@ export default {
     trigger(name, event = {}) {
       event.$target = this
       event.$table = this.$refs.vxe
+      //online增强参数兼容
+      event.target = this
       this.$emit(name, event)
     },
 
@@ -873,7 +907,11 @@ export default {
         }
       })
     },
-
+    //options自定义赋值 刷新
+    virtualRefresh(){
+      this.scrolling = true
+      this.closeScrolling()
+    },
     // 设置 this.scrolling 防抖模式
     closeScrolling: simpleDebounce(function () {
       this.scrolling = false
@@ -1005,7 +1043,7 @@ export default {
       return await xTable.updateData()
     },
 
-    async _addOrInsert(rows = {}, index, triggerName) {
+    async _addOrInsert(rows = {}, index, triggerName, isOnlJs) {
       let {xTable} = this.$refs.vxe.$refs
       let records
       if (Array.isArray(rows)) {
@@ -1017,14 +1055,19 @@ export default {
       records.forEach(record => this._createRow(record))
       let result = await this.pushRows(records, {index: index, setActive: true})
       // 遍历插入的行
-      for (let i = 0; i < result.rows.length; i++) {
-        let row = result.rows[i]
-        this.trigger(triggerName, {
-          row: row,
-          $table: xTable,
-          target: this,
-        })
+      // update--begin--autor:lvdandan-----date:20201117------for:LOWCOD-987 【新行编辑】js增强附表内置方法调用问题 #1819
+      // online js增强时以传过来值为准，不再赋默认值
+      if (isOnlJs != true) {
+        for (let i = 0; i < result.rows.length; i++) {
+          let row = result.rows[i]
+          this.trigger(triggerName, {
+            row: row,
+            $table: xTable,
+            target: this,
+          })
+        }
       }
+      // update--end--autor:lvdandan-----date:20201117------for:LOWCOD-987 【新行编辑】js增强附表内置方法调用问题 #1819
       return result
     },
     // 创建新行，自动添加默认值
@@ -1035,7 +1078,7 @@ export default {
         let col = column.own
         if (record[col.key] == null || record[col.key] === '') {
           // 设置默认值
-          let createValue = getEnhancedMixins(col.$type, 'createValue')
+          let createValue = getEnhancedMixins(col.$type || col.type, 'createValue')
           record[col.key] = createValue({row: record, column, $table: xTable})
         }
       })
@@ -1184,7 +1227,7 @@ export default {
 // 兼容 online 的规则
 const fooPatterns = [
   {title: '非空', value: '*', pattern: /^.+$/},
-  {title: '6到16位数字', value: 'n6-16', pattern: /^\d{6,18}$/},
+  {title: '6到16位数字', value: 'n6-16', pattern: /^\d{6,16}$/},
   {title: '6到16位任意字符', value: '*6-16', pattern: /^.{6,16}$/},
   {title: '6到18位字母', value: 's6-18', pattern: /^[a-z|A-Z]{6,18}$/},
   {title: '网址', value: 'url', pattern: /^(?:([A-Za-z]+):)?(\/{0,3})([0-9.\-A-Za-z]+)(?::(\d+))?(?:\/([^?#]*))?(?:\?([^#]*))?(?:#(.*))?$/},

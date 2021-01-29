@@ -10,9 +10,10 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.google.common.base.Joiner;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.StringUtils;
 import org.apache.shiro.SecurityUtils;
-import org.jeecg.common.api.dto.message.*;
 import org.jeecg.common.api.dto.OnlineAuthDTO;
+import org.jeecg.common.api.dto.message.*;
 import org.jeecg.common.aspect.UrlMatchEnum;
 import org.jeecg.common.constant.CacheConstant;
 import org.jeecg.common.constant.CommonConstant;
@@ -26,17 +27,20 @@ import org.jeecg.common.util.SysAnnmentTypeEnum;
 import org.jeecg.common.util.YouBianCodeUtil;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.message.entity.SysMessageTemplate;
+import org.jeecg.modules.message.handle.impl.EmailSendMsgHandle;
 import org.jeecg.modules.message.service.ISysMessageTemplateService;
 import org.jeecg.modules.message.websocket.WebSocket;
 import org.jeecg.modules.system.entity.*;
 import org.jeecg.modules.system.mapper.*;
 import org.jeecg.modules.system.service.*;
+import org.jeecg.modules.system.util.SecurityUtil;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.util.PathMatcher;
+
 import javax.annotation.Resource;
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -321,7 +325,9 @@ public class SysBaseApiImpl implements ISysBaseAPI {
 		if(map!=null) {
 			for (Map.Entry<String, String> entry : map.entrySet()) {
 				String str = "${" + entry.getKey() + "}";
-				title = title.replace(str, entry.getValue());
+				if(oConvertUtils.isNotEmpty(title)){
+					title = title.replace(str, entry.getValue());
+				}
 				content = content.replace(str, entry.getValue());
 			}
 		}
@@ -357,7 +363,7 @@ public class SysBaseApiImpl implements ISysBaseAPI {
 				obj.put(WebsocketConst.MSG_USER_ID, sysUser.getId());
 				obj.put(WebsocketConst.MSG_ID, announcement.getId());
 				obj.put(WebsocketConst.MSG_TXT, announcement.getTitile());
-				webSocket.sendOneMessage(sysUser.getId(), obj.toJSONString());
+				webSocket.sendMessage(sysUser.getId(), obj.toJSONString());
 			}
 		}
 
@@ -424,7 +430,7 @@ public class SysBaseApiImpl implements ISysBaseAPI {
 				obj.put(WebsocketConst.MSG_USER_ID, sysUser.getId());
 				obj.put(WebsocketConst.MSG_ID, announcement.getId());
 				obj.put(WebsocketConst.MSG_TXT, announcement.getTitile());
-				webSocket.sendOneMessage(sysUser.getId(), obj.toJSONString());
+				webSocket.sendMessage(sysUser.getId(), obj.toJSONString());
 			}
 		}
 	}
@@ -630,12 +636,22 @@ public class SysBaseApiImpl implements ISysBaseAPI {
 	@Override
 	public DynamicDataSourceModel getDynamicDbSourceById(String dbSourceId) {
 		SysDataSource dbSource = dataSourceService.getById(dbSourceId);
+		if(dbSource!=null && StringUtils.isNotBlank(dbSource.getDbPassword())){
+			String dbPassword = dbSource.getDbPassword();
+			String decodedStr = SecurityUtil.jiemi(dbPassword);
+			dbSource.setDbPassword(decodedStr);
+		}
 		return new DynamicDataSourceModel(dbSource);
 	}
 
 	@Override
 	public DynamicDataSourceModel getDynamicDbSourceByCode(String dbSourceCode) {
 		SysDataSource dbSource = dataSourceService.getOne(new LambdaQueryWrapper<SysDataSource>().eq(SysDataSource::getCode, dbSourceCode));
+		if(dbSource!=null && StringUtils.isNotBlank(dbSource.getDbPassword())){
+			String dbPassword = dbSource.getDbPassword();
+			String decodedStr = SecurityUtil.jiemi(dbPassword);
+			dbSource.setDbPassword(decodedStr);
+		}
 		return new DynamicDataSourceModel(dbSource);
 	}
 
@@ -653,7 +669,7 @@ public class SysBaseApiImpl implements ISysBaseAPI {
 	public void sendWebSocketMsg(String[] userIds, String cmd) {
 		JSONObject obj = new JSONObject();
 		obj.put(WebsocketConst.MSG_CMD, cmd);
-		webSocket.sendMoreMessage(userIds, obj.toJSONString());
+		webSocket.sendMessage(userIds, obj.toJSONString());
 	}
 
 	@Override
@@ -680,7 +696,7 @@ public class SysBaseApiImpl implements ISysBaseAPI {
 		obj.put(WebsocketConst.MSG_CMD, WebsocketConst.CMD_SIGN);
 		obj.put(WebsocketConst.MSG_USER_ID,userId);
 		//TODO 目前全部推送，后面修改
-		webSocket.sendAllMessage(obj.toJSONString());
+		webSocket.sendMessage(obj.toJSONString());
 	}
 
 	@Override
@@ -840,6 +856,13 @@ public class SysBaseApiImpl implements ISysBaseAPI {
 		return JSON.parseArray(JSON.toJSONString(userMapper.selectList(queryWrapper))).toJavaList(JSONObject.class);
 	}
 
+	@Override
+	public List<JSONObject> queryUsersByIds(String ids) {
+		LambdaQueryWrapper<SysUser> queryWrapper =  new LambdaQueryWrapper<>();
+		queryWrapper.in(SysUser::getId,ids.split(","));
+		return JSON.parseArray(JSON.toJSONString(userMapper.selectList(queryWrapper))).toJavaList(JSONObject.class);
+	}
+
 	/**
 	 * 37根据多个部门编码(逗号分隔)，查询返回多个部门信息
 	 * @param usernames
@@ -849,6 +872,13 @@ public class SysBaseApiImpl implements ISysBaseAPI {
 	public List<JSONObject> queryDepartsByOrgcodes(String orgCodes) {
 		LambdaQueryWrapper<SysDepart> queryWrapper =  new LambdaQueryWrapper<>();
 		queryWrapper.in(SysDepart::getOrgCode,orgCodes.split(","));
+		return JSON.parseArray(JSON.toJSONString(sysDepartService.list(queryWrapper))).toJavaList(JSONObject.class);
+	}
+
+	@Override
+	public List<JSONObject> queryDepartsByIds(String ids) {
+		LambdaQueryWrapper<SysDepart> queryWrapper =  new LambdaQueryWrapper<>();
+		queryWrapper.in(SysDepart::getId,ids.split(","));
 		return JSON.parseArray(JSON.toJSONString(sysDepartService.list(queryWrapper))).toJavaList(JSONObject.class);
 	}
 
@@ -892,7 +922,7 @@ public class SysBaseApiImpl implements ISysBaseAPI {
 				obj.put(WebsocketConst.MSG_USER_ID, sysUser.getId());
 				obj.put(WebsocketConst.MSG_ID, announcement.getId());
 				obj.put(WebsocketConst.MSG_TXT, announcement.getTitile());
-				webSocket.sendOneMessage(sysUser.getId(), obj.toJSONString());
+				webSocket.sendMessage(sysUser.getId(), obj.toJSONString());
 			}
 		}
 
@@ -944,8 +974,21 @@ public class SysBaseApiImpl implements ISysBaseAPI {
 				obj.put(WebsocketConst.MSG_USER_ID, sysUser.getId());
 				obj.put(WebsocketConst.MSG_ID, announcement.getId());
 				obj.put(WebsocketConst.MSG_TXT, announcement.getTitile());
-				webSocket.sendOneMessage(sysUser.getId(), obj.toJSONString());
+				webSocket.sendMessage(sysUser.getId(), obj.toJSONString());
 			}
 		}
 	}
+
+	/**
+	 * 发送邮件消息
+	 * @param email
+	 * @param title
+	 * @param content
+	 */
+	@Override
+	public void sendEmailMsg(String email, String title, String content) {
+			EmailSendMsgHandle emailHandle=new EmailSendMsgHandle();
+			emailHandle.SendMsg(email, title, content);
+	}
+
 }
